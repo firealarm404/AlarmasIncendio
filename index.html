@@ -4,18 +4,39 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Central de alarmas de incendio</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="stylesheet" href="css/style.css">
-<script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
-</script>
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 </head>
 <body>
-<div id="scene"></div>
+<div id="map"></div>
 
 <header id="topbar">
   <span id="status">Iniciando…</span>
   <span id="warn" hidden></span>
 </header>
+
+<nav id="view" aria-label="Vista del mapa">
+  <button id="b-2d" aria-pressed="false">2D</button>
+  <button id="b-3d" aria-pressed="true">3D</button>
+  <button id="b-base" aria-pressed="false">Mapa de calles</button>
+  <button id="b-calib" aria-pressed="false">Calibrar</button>
+</nav>
+
+<section id="calib" hidden>
+  <h2>Calibración</h2>
+  <p>Haz clic en el centro del bloque de módulos sobre la imagen satelital.</p>
+  <div class="row">
+    <button id="rot-m">Girar −2°</button>
+    <button id="rot-p">Girar +2°</button>
+  </div>
+  <pre id="calib-out"></pre>
+  <div class="row">
+    <button id="calib-copy">Copiar</button>
+    <button id="calib-reset">Borrar calibración local</button>
+  </div>
+  <p>Para dejarla fija, pega esas líneas en <code>js/data.js</code>.</p>
+</section>
 
 <section id="alarms" aria-label="Alarmas activas">
   <h2>Alarmas activas</h2>
