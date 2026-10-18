@@ -1,4 +1,4 @@
-import { ORIGIN, ROT, BUILDINGS, SENSORS } from './data.js';
+import { ORIGIN, ROT, SCALE, IMG_CENTER, BUILDINGS, SENSORS } from './data.js';
 import { firebaseConfig, DEMO } from './config.js';
 
 const $ = (id) => document.getElementById(id);
@@ -6,9 +6,10 @@ const $ = (id) => document.getElementById(id);
 /* ---------- Geometría: metros locales → lon/lat ---------- */
 let origin = { ...ORIGIN };
 let rotOff = ROT;
+let scale = SCALE;
 try {
-  const s = JSON.parse(localStorage.getItem('camp-cal'));
-  if (s) { origin = s.origin; rotOff = s.rotOff ?? 0; }
+  const s = JSON.parse(localStorage.getItem('camp-cal2'));
+  if (s) { origin = s.origin; rotOff = s.rotOff ?? 0; scale = s.scale ?? SCALE; }
 } catch { /* sin calibración local */ }
 
 const M = 111320; // metros por grado de latitud
@@ -17,12 +18,11 @@ function toLL(e, n) {
   const x = e * c - n * s, y = e * s + n * c;
   return [origin.lon + x / (M * Math.cos((origin.lat * Math.PI) / 180)), origin.lat + y / M];
 }
+const toLLpx = ([x, y]) => toLL((x - IMG_CENTER[0]) * scale, -(y - IMG_CENTER[1]) * scale);
+const centroid = (b) => [b.poly.reduce((t, p) => t + p[0], 0) / b.poly.length, b.poly.reduce((t, p) => t + p[1], 0) / b.poly.length];
 function footprint(b) {
-  const a = (b.ang * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
-  const hl = b.size[0] / 2, hw = b.size[1] / 2;
-  const ring = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([l, w]) =>
-    toLL(b.c[0] + l * hl * ca - w * hw * sa, b.c[1] + l * hl * sa + w * hw * ca));
-  return { type: 'Feature', properties: { id: b.id, name: b.name, h: b.size[2] }, geometry: { type: 'Polygon', coordinates: [ring] } };
+  const ring = [...b.poly, b.poly[0]].map(toLLpx);
+  return { type: 'Feature', properties: { id: b.id, name: b.name, h: b.h }, geometry: { type: 'Polygon', coordinates: [ring] } };
 }
 const campGeoJSON = () => ({ type: 'FeatureCollection', features: BUILDINGS.map(footprint) });
 const bName = (id) => BUILDINGS.find((b) => b.id === id)?.name ?? 'Edificio sin mapear';
@@ -70,7 +70,7 @@ function placeLabels() {
       m = new maplibregl.Marker({ element: el }).setLngLat([0, 0]).addTo(map);
       labels.set(`m:${b.id}`, m);
     }
-    m.setLngLat(toLL(b.c[0], b.c[1]));
+    m.setLngLat(toLLpx(centroid(b)));
   }
 }
 
@@ -113,10 +113,10 @@ $('b-base').onclick = (e) => {
 let calib = false;
 function showCal() {
   $('calib-out').textContent =
-    `export const ORIGIN = { lon: ${origin.lon.toFixed(6)}, lat: ${origin.lat.toFixed(6)} };\nexport const ROT = ${rotOff};`;
+    `export const ORIGIN = { lon: ${origin.lon.toFixed(6)}, lat: ${origin.lat.toFixed(6)} };\nexport const ROT = ${rotOff};\nexport const SCALE = ${scale.toFixed(3)};`;
 }
 function saveCal() {
-  try { localStorage.setItem('camp-cal', JSON.stringify({ origin, rotOff })); } catch { /* sin almacenamiento */ }
+  try { localStorage.setItem('camp-cal2', JSON.stringify({ origin, rotOff, scale })); } catch { /* sin almacenamiento */ }
   showCal(); applyGeo();
 }
 $('b-calib').onclick = (e) => {
@@ -129,10 +129,12 @@ $('b-calib').onclick = (e) => {
 map.on('click', (e) => { if (calib) { origin = { lon: e.lngLat.lng, lat: e.lngLat.lat }; saveCal(); } });
 $('rot-m').onclick = () => { rotOff -= 2; saveCal(); };
 $('rot-p').onclick = () => { rotOff += 2; saveCal(); };
+$('sc-m').onclick = () => { scale *= 0.95; saveCal(); };
+$('sc-p').onclick = () => { scale *= 1.05; saveCal(); };
 $('calib-copy').onclick = () => navigator.clipboard?.writeText($('calib-out').textContent);
 $('calib-reset').onclick = () => {
-  try { localStorage.removeItem('camp-cal'); } catch { /* nada */ }
-  origin = { ...ORIGIN }; rotOff = ROT; showCal(); applyGeo();
+  try { localStorage.removeItem('camp-cal2'); } catch { /* nada */ }
+  origin = { ...ORIGIN }; rotOff = ROT; scale = SCALE; showCal(); applyGeo();
 };
 
 /* ---------- Enfoque en el edificio en alarma ---------- */
@@ -140,7 +142,7 @@ function focus(id) {
   const b = BUILDINGS.find((x) => x.id === id);
   if (!b) return;
   const is3d = map.getPitch() > 5;
-  map.flyTo({ center: toLL(b.c[0], b.c[1]), zoom: 18.3, pitch: is3d ? 60 : 0, bearing: is3d ? map.getBearing() : 0, duration: 1600, essential: true });
+  map.flyTo({ center: toLLpx(centroid(b)), zoom: 18.3, pitch: is3d ? 60 : 0, bearing: is3d ? map.getBearing() : 0, duration: 1600, essential: true });
 }
 
 /* ---------- Estado de alarmas + HUD ---------- */
