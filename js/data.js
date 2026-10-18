@@ -2,8 +2,8 @@
 // ORIGIN = punto del mapa que corresponde al centro de la imagen de referencia (IMG_CENTER).
 // Calibrado por el usuario. Si lo reajustas con el botón "Calibrar", pega aquí los nuevos valores.
 export const ORIGIN = { lon: -70.339651, lat: -33.190402 };
-export const ROT = 0;
-export const SCALE = 0.280;
+export const ROT = 0;      // giro extra de todo el bloque, en grados (antihorario). Las formas ya vienen orientadas al norte.
+export const SCALE = 0.280; // metros por píxel de la imagen de referencia. Calibrado por el usuario.
 
 // Imagen de referencia: captura satelital de 537 × 742 px, norte hacia arriba.
 export const IMG_CENTER = [245, 370];
