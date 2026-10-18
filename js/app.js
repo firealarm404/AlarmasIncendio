@@ -1,130 +1,151 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { BUILDINGS, SENSORS } from './data.js';
+import { ORIGIN, ROT, BUILDINGS, SENSORS } from './data.js';
 import { firebaseConfig, DEMO } from './config.js';
 
 const $ = (id) => document.getElementById(id);
-const host = $('scene');
 
-/* ---------- Escena ---------- */
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-host.appendChild(renderer.domElement);
+/* ---------- Geometría: metros locales → lon/lat ---------- */
+let origin = { ...ORIGIN };
+let rotOff = ROT;
+try {
+  const s = JSON.parse(localStorage.getItem('camp-cal'));
+  if (s) { origin = s.origin; rotOff = s.rotOff ?? 0; }
+} catch { /* sin calibración local */ }
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x04070d);
-scene.fog = new THREE.Fog(0x04070d, 150, 420);
-const camera = new THREE.PerspectiveCamera(45, 1, 1, 1000);
-camera.position.set(120, 110, 150);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.maxPolarAngle = Math.PI / 2.1;
-controls.minDistance = 25;
-controls.maxDistance = 300;
-
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-sun.position.set(80, 120, 40);
-scene.add(sun);
-const grid = new THREE.GridHelper(600, 60, 0x00e5ff, 0x0a3a4a);
-grid.position.y = -0.05;
-scene.add(grid);
-
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.9, 0.5, 0.2));
-composer.addPass(new OutputPass());
-
-function resize() {
-  const w = host.clientWidth, h = host.clientHeight;
-  renderer.setSize(w, h);
-  composer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+const M = 111320; // metros por grado de latitud
+function toLL(e, n) {
+  const r = (rotOff * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+  const x = e * c - n * s, y = e * s + n * c;
+  return [origin.lon + x / (M * Math.cos((origin.lat * Math.PI) / 180)), origin.lat + y / M];
 }
-addEventListener('resize', resize);
-resize();
-
-/* ---------- Edificios ---------- */
-function makeLabel(text) {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 64;
-  const g = c.getContext('2d');
-  g.font = '600 34px monospace';
-  g.fillStyle = '#6fe9ff';
-  g.textAlign = 'center';
-  g.fillText(text, 128, 44);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
-  s.scale.set(24, 6, 1);
-  return s;
+function footprint(b) {
+  const a = (b.ang * Math.PI) / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const hl = b.size[0] / 2, hw = b.size[1] / 2;
+  const ring = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([l, w]) =>
+    toLL(b.c[0] + l * hl * ca - w * hw * sa, b.c[1] + l * hl * sa + w * hw * ca));
+  return { type: 'Feature', properties: { id: b.id, name: b.name, h: b.size[2] }, geometry: { type: 'Polygon', coordinates: [ring] } };
 }
+const campGeoJSON = () => ({ type: 'FeatureCollection', features: BUILDINGS.map(footprint) });
+const bName = (id) => BUILDINGS.find((b) => b.id === id)?.name ?? 'Edificio sin mapear';
 
-const meshes = new Map();
-for (const b of BUILDINGS) {
-  const geo = new THREE.BoxGeometry(...b.size);
-  const mat = new THREE.MeshStandardMaterial({ color: 0x06222b, emissive: 0x00e5ff, emissiveIntensity: 0.12, transparent: true, opacity: 0.9 });
-  const mesh = new THREE.Mesh(geo, mat);
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x00e5ff }));
-  const label = makeLabel(b.id);
-  label.position.y = b.size[1] / 2 + 5;
-  mesh.add(edges, label);
-  mesh.position.set(b.pos[0], b.pos[1] + b.size[1] / 2, b.pos[2]);
-  mesh.rotation.y = b.rot;
-  scene.add(mesh);
-  meshes.set(b.id, { b, mat, edges });
-}
-const bName = (id) => meshes.get(id)?.b.name ?? 'Edificio sin mapear';
-
-/* ---------- Cámara ---------- */
-let tween = null;
-function focus(id) {
-  const e = meshes.get(id);
-  if (!e) return;
-  const [x, y, z] = e.b.pos;
-  tween = {
-    t: 0,
-    fp: camera.position.clone(), ft: controls.target.clone(),
-    tp: new THREE.Vector3(x + 55, y + 60, z + 70), tt: new THREE.Vector3(x, y + 4, z),
-  };
-}
-
-const clock = new THREE.Clock();
-renderer.setAnimationLoop(() => {
-  const dt = clock.getDelta(), t = clock.elapsedTime;
-  if (tween) {
-    tween.t = Math.min(1, tween.t + dt / 1.6);
-    const k = 1 - Math.pow(1 - tween.t, 3);
-    camera.position.lerpVectors(tween.fp, tween.tp, k);
-    controls.target.lerpVectors(tween.ft, tween.tt, k);
-    if (tween.t >= 1) tween = null;
-  }
-  controls.update();
-  const blinkOn = Math.sin(t * 9) > 0;
-  for (const [id, e] of meshes) {
-    if (activeBuildings.has(id)) {
-      e.mat.color.setHex(0xff1744);
-      e.mat.emissive.setHex(0xff1744);
-      e.mat.emissiveIntensity = blinkOn ? 3.2 : 0.4;
-      e.edges.material.color.setHex(0xff5c7a);
-    } else {
-      e.mat.color.setHex(0x06222b);
-      e.mat.emissive.setHex(0x00e5ff);
-      e.mat.emissiveIntensity = 0.12;
-      e.edges.material.color.setHex(0x00e5ff);
-    }
-  }
-  composer.render();
+/* ---------- Mapa ---------- */
+const style = {
+  version: 8,
+  sources: {
+    osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, maxzoom: 19, attribution: '© OpenStreetMap contributors' },
+    sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, maxzoom: 18, attribution: 'Imágenes © Esri, Maxar, Earthstar Geographics' },
+  },
+  layers: [
+    { id: 'osm', type: 'raster', source: 'osm', layout: { visibility: 'none' } },
+    { id: 'sat', type: 'raster', source: 'sat', paint: { 'raster-brightness-max': 0.85 } },
+  ],
+};
+const map = new maplibregl.Map({
+  container: 'map', style, center: toLL(0, 0), zoom: 17.2, pitch: 60, bearing: -20, maxPitch: 75, maxZoom: 20,
 });
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+
+let mapReady = false, blinkOn = true, activeBuildings = new Set();
+const labels = new Map();
+
+const colorExpr = (alarm, normal) => ['case',
+  ['in', ['get', 'id'], ['literal', activeBuildings.size ? [...activeBuildings] : ['__none']]], alarm, normal];
+
+function paint() {
+  if (!mapReady) return;
+  map.setPaintProperty('bld', 'fill-extrusion-color', colorExpr(blinkOn ? '#ff1744' : '#7a0a1e', '#0e4a5c'));
+  map.setPaintProperty('bld-line', 'line-color', colorExpr('#ff5c7a', '#00e5ff'));
+  map.setPaintProperty('bld-glow', 'line-color', colorExpr('#ff1744', '#00e5ff'));
+  for (const [id, el] of labels) el.classList.toggle('alarm', activeBuildings.has(id));
+}
+setInterval(() => { blinkOn = !blinkOn; paint(); }, 450);
+
+function placeLabels() {
+  for (const b of BUILDINGS) {
+    let m = labels.get(`m:${b.id}`);
+    if (!m) {
+      const el = document.createElement('div');
+      el.className = 'lbl';
+      el.textContent = b.id;
+      labels.set(b.id, el);
+      m = new maplibregl.Marker({ element: el }).setLngLat([0, 0]).addTo(map);
+      labels.set(`m:${b.id}`, m);
+    }
+    m.setLngLat(toLL(b.c[0], b.c[1]));
+  }
+}
+
+map.on('load', () => {
+  map.addSource('camp', { type: 'geojson', data: campGeoJSON() });
+  map.addLayer({ id: 'bld-glow', type: 'line', source: 'camp', paint: { 'line-color': '#00e5ff', 'line-width': 7, 'line-blur': 5, 'line-opacity': 0.4 } });
+  map.addLayer({ id: 'bld', type: 'fill-extrusion', source: 'camp', paint: {
+    'fill-extrusion-color': '#0e4a5c', 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.85 } });
+  map.addLayer({ id: 'bld-line', type: 'line', source: 'camp', paint: { 'line-color': '#00e5ff', 'line-width': 2 } });
+  placeLabels();
+  mapReady = true;
+  paint();
+});
+
+function applyGeo() {
+  map.getSource('camp')?.setData(campGeoJSON());
+  placeLabels();
+}
+
+/* ---------- Vista 2D / 3D y mapa base ---------- */
+function setMode(mode3d) {
+  map.easeTo({ pitch: mode3d ? 60 : 0, bearing: mode3d ? -20 : 0, duration: 800 });
+}
+map.on('pitchend', () => {
+  const is3d = map.getPitch() > 5;
+  $('b-3d').setAttribute('aria-pressed', is3d);
+  $('b-2d').setAttribute('aria-pressed', !is3d);
+});
+$('b-2d').onclick = () => setMode(false);
+$('b-3d').onclick = () => setMode(true);
+$('b-base').onclick = (e) => {
+  const streets = e.currentTarget.getAttribute('aria-pressed') !== 'true';
+  e.currentTarget.setAttribute('aria-pressed', streets);
+  e.currentTarget.textContent = streets ? 'Satélite' : 'Mapa de calles';
+  map.setLayoutProperty('osm', 'visibility', streets ? 'visible' : 'none');
+  map.setLayoutProperty('sat', 'visibility', streets ? 'none' : 'visible');
+};
+
+/* ---------- Calibración ---------- */
+let calib = false;
+function showCal() {
+  $('calib-out').textContent =
+    `export const ORIGIN = { lon: ${origin.lon.toFixed(6)}, lat: ${origin.lat.toFixed(6)} };\nexport const ROT = ${rotOff};`;
+}
+function saveCal() {
+  try { localStorage.setItem('camp-cal', JSON.stringify({ origin, rotOff })); } catch { /* sin almacenamiento */ }
+  showCal(); applyGeo();
+}
+$('b-calib').onclick = (e) => {
+  calib = !calib;
+  e.currentTarget.setAttribute('aria-pressed', calib);
+  $('calib').hidden = !calib;
+  map.getCanvas().style.cursor = calib ? 'crosshair' : '';
+  showCal();
+};
+map.on('click', (e) => { if (calib) { origin = { lon: e.lngLat.lng, lat: e.lngLat.lat }; saveCal(); } });
+$('rot-m').onclick = () => { rotOff -= 2; saveCal(); };
+$('rot-p').onclick = () => { rotOff += 2; saveCal(); };
+$('calib-copy').onclick = () => navigator.clipboard?.writeText($('calib-out').textContent);
+$('calib-reset').onclick = () => {
+  try { localStorage.removeItem('camp-cal'); } catch { /* nada */ }
+  origin = { ...ORIGIN }; rotOff = ROT; showCal(); applyGeo();
+};
+
+/* ---------- Enfoque en el edificio en alarma ---------- */
+function focus(id) {
+  const b = BUILDINGS.find((x) => x.id === id);
+  if (!b) return;
+  const is3d = map.getPitch() > 5;
+  map.flyTo({ center: toLL(b.c[0], b.c[1]), zoom: 18.3, pitch: is3d ? 60 : 0, bearing: is3d ? map.getBearing() : 0, duration: 1600, essential: true });
+}
 
 /* ---------- Estado de alarmas + HUD ---------- */
 const sensorMeta = { ...SENSORS };
 const alarms = new Map();
-let activeBuildings = new Set();
 let hudSensor = null;
 let dispatchFn = null;
 
@@ -164,7 +185,6 @@ function showHud(a) {
   btn.textContent = a.dispatched ? 'Brigada despachada' : 'Despachar brigada';
   $('hud').hidden = false;
 }
-
 function openAlarm(a) {
   if (a.buildingId) focus(a.buildingId);
   showHud(a);
@@ -187,8 +207,8 @@ function refresh() {
     ul.appendChild(li);
   }
   $('empty').hidden = alarms.size > 0;
+  paint();
 }
-
 function upsertAlarm(a) {
   const isNew = !alarms.has(a.sensorId);
   alarms.set(a.sensorId, a);

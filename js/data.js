@@ -1,15 +1,21 @@
-// Modelo del campamento (metros). Medidas estimadas desde imagen satelital:
-// reemplazar por las reales de tus planos. y = cota de la terraza.
+// Campamento Pérez Caldera. ORIGIN = centro del bloque de módulos. Afínalo con el botón "Calibrar" del mapa
+// y pega aquí los valores que te muestre.
+export const ORIGIN = { lon: -70.33962524749629, lat: -33.19111471796648 };
+export const ROT = 0; // giro extra de todo el bloque, en grados (antihorario)
+
+// Cada edificio: c = [este, norte] en metros desde ORIGIN; size = [largo, ancho, alto] en metros;
+// ang = giro del eje largo en grados, antihorario desde el este.
+// Medidas estimadas desde imagen satelital: reemplazar por las de tus planos.
 export const BUILDINGS = [
-  { id: 'B1', name: 'Módulo 1', pos: [-8, 7, -52], size: [62, 9, 11], rot: -0.2 },
-  { id: 'B2', name: 'Módulo 2', pos: [-6, 6, -36], size: [62, 9, 11], rot: -0.2 },
-  { id: 'B3', name: 'Módulo 3', pos: [-4, 5, -20], size: [60, 9, 11], rot: -0.2 },
-  { id: 'B4', name: 'Módulo 4', pos: [-2, 4, -4],  size: [60, 9, 11], rot: -0.2 },
-  { id: 'B5', name: 'Módulo 5', pos: [0, 3, 12],   size: [62, 9, 11], rot: -0.2 },
-  { id: 'B6', name: 'Módulo 6', pos: [2, 2, 28],   size: [62, 9, 11], rot: -0.2 },
-  { id: 'B7', name: 'Módulo 7', pos: [4, 1, 44],   size: [58, 9, 11], rot: -0.2 },
-  { id: 'B8', name: 'Módulo 8', pos: [-2, 0, 60],  size: [56, 9, 12], rot: -0.2 },
-  { id: 'MED', name: 'Centro Médico', pos: [42, 3, 18], size: [14, 5, 22], rot: -0.2 },
+  { id: 'B1', name: 'Módulo 1', c: [21, 52],   size: [62, 11, 9], ang: -22 },
+  { id: 'B2', name: 'Módulo 2', c: [15, 37],   size: [62, 11, 9], ang: -22 },
+  { id: 'B3', name: 'Módulo 3', c: [9, 22],    size: [60, 11, 9], ang: -22 },
+  { id: 'B4', name: 'Módulo 4', c: [3, 7],     size: [60, 11, 9], ang: -22 },
+  { id: 'B5', name: 'Módulo 5', c: [-3, -7],   size: [62, 11, 9], ang: -22 },
+  { id: 'B6', name: 'Módulo 6', c: [-9, -22],  size: [62, 11, 9], ang: -22 },
+  { id: 'B7', name: 'Módulo 7', c: [-15, -37], size: [58, 11, 9], ang: -22 },
+  { id: 'B8', name: 'Módulo 8', c: [-21, -52], size: [56, 12, 9], ang: -22 },
+  { id: 'MED', name: 'Centro Médico', c: [42, -12], size: [22, 14, 5], ang: -112 },
 ];
 
 // Mapeo sensor → ubicación. En producción vive en Firestore (colección "sensors");
