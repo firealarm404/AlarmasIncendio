@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Central de alarmas de incendio</title>
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="scene"></div>
+
+<header id="topbar">
+  <span id="status">Iniciando…</span>
+  <span id="warn" hidden></span>
+</header>
+
+<section id="alarms" aria-label="Alarmas activas">
+  <h2>Alarmas activas</h2>
+  <ul id="alarm-list"></ul>
+  <p id="empty">Sin alarmas. El sistema está en vigilancia.</p>
+</section>
+
+<aside id="hud" hidden role="alertdialog" aria-labelledby="hud-title">
+  <h2 id="hud-title">Incendio detectado</h2>
+  <dl>
+    <dt>Edificio</dt><dd id="h-b"></dd>
+    <dt>Piso</dt><dd id="h-f"></dd>
+    <dt>Referencia</dt><dd id="h-r"></dd>
+    <dt>Sensor</dt><dd id="h-s"></dd>
+  </dl>
+  <div class="row">
+    <button id="h-dispatch" class="danger">Despachar brigada</button>
+    <button id="h-close">Minimizar</button>
+  </div>
+</aside>
+
+<section id="demo" hidden>
+  <h2>Modo demo</h2>
+  <p>Firebase no está configurado. Simula una alarma:</p>
+  <div id="demo-buttons"></div>
+</section>
+
+<form id="login" hidden>
+  <h1>Central de alarmas</h1>
+  <label>Correo<input id="email" type="email" autocomplete="username" required></label>
+  <label>Contraseña<input id="password" type="password" autocomplete="current-password" required></label>
+  <button type="submit">Ingresar</button>
+  <p id="login-err" role="alert"></p>
+</form>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

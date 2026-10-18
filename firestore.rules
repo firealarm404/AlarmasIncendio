@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Solo usuarios autenticados leen. Las escrituras de paneles usan Admin SDK (ignora reglas).
+    match /sensors/{id} { allow read: if request.auth != null; allow write: if false; }
+    match /panels/{id}  { allow read: if request.auth != null; allow write: if false; }
+    match /alarms/{id} {
+      allow read: if request.auth != null;
+      // El operador solo puede registrar el despacho, nada más
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dispatchedAt', 'dispatchedBy']);
+      allow create, delete: if false;
+    }
+  }
+}
