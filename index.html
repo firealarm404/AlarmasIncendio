@@ -3,56 +3,77 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Central de alarmas de incendio</title>
+<title>Sistema de seguridad · Monitoreo de complejo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="stylesheet" href="css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 </head>
 <body>
 <div id="map"></div>
+<div id="scan"></div>
+<svg id="link" aria-hidden="true"><line id="link-line" x1="0" y1="0" x2="0" y2="0"/><circle id="link-dot" r="5" cx="0" cy="0"/></svg>
 
-<header id="topbar">
-  <span id="status">Iniciando…</span>
-  <span id="warn" hidden></span>
+<header id="top">
+  <div class="chip">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M17 9h-1V7a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2zm-7-2a2 2 0 0 1 4 0v2h-4z"/></svg>
+    Sistema de seguridad
+  </div>
+  <nav id="view" aria-label="Vista del mapa">
+    <button id="b-2d" aria-pressed="false">2D</button>
+    <button id="b-3d" aria-pressed="true">3D</button>
+    <button id="b-base" aria-pressed="false">Calles</button>
+    <button id="b-admin" aria-pressed="false" hidden>Administrar</button>
+  </nav>
+  <div class="chip right">Monitoreo de complejo</div>
 </header>
+<span id="warn" hidden></span>
 
-<nav id="view" aria-label="Vista del mapa">
-  <button id="b-2d" aria-pressed="false">2D</button>
-  <button id="b-3d" aria-pressed="true">3D</button>
-  <button id="b-base" aria-pressed="false">Mapa de calles</button>
-  <button id="b-calib" aria-pressed="false">Calibrar</button>
-</nav>
-
-<section id="calib" hidden>
-  <h2>Calibración</h2>
-  <p>Haz clic en el centro del bloque de módulos sobre la imagen satelital.</p>
-  <div class="row">
-    <button id="rot-m">Girar −2°</button>
-    <button id="rot-p">Girar +2°</button>
-    <button id="sc-m">Escala −5%</button>
-    <button id="sc-p">Escala +5%</button>
-  </div>
-  <pre id="calib-out"></pre>
-  <div class="row">
-    <button id="calib-copy">Copiar</button>
-    <button id="calib-reset">Borrar calibración local</button>
-  </div>
-  <p>Para dejarla fija, pega esas líneas en <code>js/data.js</code>.</p>
-</section>
-
-<section id="alarms" aria-label="Alarmas activas">
+<aside id="secpanel" class="panel">
+  <div class="bar"><i id="bar-fill"></i></div>
+  <dl class="stats">
+    <dt>Sensores en el plano</dt><dd id="n-sensors">0</dd>
+    <dt>Alarmas activas</dt><dd id="n-active">0</dd>
+    <dt>Brigadas despachadas</dt><dd id="n-disp">0</dd>
+  </dl>
   <h2>Alarmas activas</h2>
-  <ul id="alarm-list"></ul>
+  <ul id="alarm-list" class="items"></ul>
   <p id="empty">Sin alarmas. El sistema está en vigilancia.</p>
-</section>
+  <h2>Registro de eventos</h2>
+  <ul id="log"></ul>
+  <footer>
+    <span id="who"></span>
+    <button id="b-out">Salir</button>
+  </footer>
+</aside>
+
+<aside id="admin" class="panel" hidden>
+  <h2>Administración</h2>
+  <div class="tabs" role="tablist">
+    <button data-tab="b" aria-pressed="true">Edificios</button>
+    <button data-tab="s" aria-pressed="false">Alarmas</button>
+    <button data-tab="c" aria-pressed="false">Calibración</button>
+  </div>
+  <div id="adm-body"></div>
+  <footer>
+    <span id="dirty"></span>
+    <button id="adm-discard">Descartar</button>
+    <button id="adm-save" class="primary">Guardar cambios</button>
+  </footer>
+  <p id="adm-msg" role="status"></p>
+</aside>
 
 <aside id="hud" hidden role="alertdialog" aria-labelledby="hud-title">
-  <h2 id="hud-title">Incendio detectado</h2>
+  <h2 id="hud-title">¡¡ Alerta de incendio activada !!</h2>
   <dl>
-    <dt>Edificio</dt><dd id="h-b"></dd>
-    <dt>Piso</dt><dd id="h-f"></dd>
-    <dt>Referencia</dt><dd id="h-r"></dd>
-    <dt>Sensor</dt><dd id="h-s"></dd>
+    <dt>Ubicación:</dt><dd id="h-b"></dd>
+    <dt>Sensor:</dt><dd id="h-s"></dd>
+    <dt>Nivel:</dt><dd id="h-f"></dd>
+    <dt>Detalle:</dt><dd id="h-r"></dd>
+    <dt>Hora:</dt><dd id="h-t"></dd>
+    <dt>Estado:</dt><dd class="crit">Crítico · alarma activada</dd>
   </dl>
   <div class="row">
     <button id="h-dispatch" class="danger">Despachar brigada</button>
@@ -60,17 +81,25 @@
   </div>
 </aside>
 
-<section id="demo" hidden>
+<aside id="timer" class="panel">
+  <small>Tiempo desde la primera alerta</small>
+  <b id="t-val">--:--</b>
+</aside>
+<div id="banner">❰ <span id="banner-text">Iniciando</span> ❱</div>
+
+<div id="hint" hidden><span id="hint-text"></span><button id="hint-done" hidden>Terminar</button><button id="hint-cancel">Cancelar</button></div>
+
+<section id="demo" class="panel" hidden>
   <h2>Modo demo</h2>
   <p>Firebase no está configurado. Simula una alarma:</p>
   <div id="demo-buttons"></div>
 </section>
 
-<form id="login" hidden>
-  <h1>Central de alarmas</h1>
+<form id="login" class="panel" hidden>
+  <h1>Sistema de seguridad</h1>
   <label>Correo<input id="email" type="email" autocomplete="username" required></label>
   <label>Contraseña<input id="password" type="password" autocomplete="current-password" required></label>
-  <button type="submit">Ingresar</button>
+  <button type="submit" class="primary">Ingresar</button>
   <p id="login-err" role="alert"></p>
 </form>
 
