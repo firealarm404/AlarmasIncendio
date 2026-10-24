@@ -14,7 +14,7 @@ const alarms = new Map(); // sensorId -> { ts, dispatchedAt }
 let dispatchFn = null;
 let hudSensor = null;
 let mapReady = false, blinkOn = true;
-let activeBuildings = new Set();
+let activeBuildings = new Set(), drillBuildings = new Set(), realSensors = new Set(), drillSensors = new Set();
 // administración
 let adminOn = false, tab = 'b', tool = null, selB = null, selS = null, pending = null, draft = [];
 
@@ -57,13 +57,17 @@ map.on('load', () => {
 
 function paint() {
   if (!mapReady) return;
-  const al = ['in', ['get', 'id'], ['literal', activeBuildings.size ? [...activeBuildings] : ['__none']]];
+  const lit = (set) => ['in', ['get', 'id'], ['literal', set.size ? [...set] : ['__none']]];
+  const al = lit(activeBuildings), dr = lit(drillBuildings);
   const cy = ['==', ['get', 'tone'], 'cyan'];
-  map.setPaintProperty('bld', 'fill-extrusion-color', ['case', al, blinkOn ? '#ff1d2e' : '#7a0a1e', cy, '#0b4f7a', '#0c5a4e']);
-  const line = ['case', ['==', ['get', 'id'], selB || ''], '#ffffff', al, '#ff4d4d', cy, '#19d3ff', '#2dff9a'];
-  map.setPaintProperty('bld-line', 'line-color', line);
-  map.setPaintProperty('bld-glow', 'line-color', ['case', al, '#ff1d2e', cy, '#19d3ff', '#2dff9a']);
-  for (const [id, m] of lblMarkers) m.getElement().classList.toggle('alarm', activeBuildings.has(id));
+  map.setPaintProperty('bld', 'fill-extrusion-color', ['case', al, blinkOn ? '#ff1d2e' : '#7a0a1e', dr, blinkOn ? '#ffb300' : '#5a4300', cy, '#0b4f7a', '#0c5a4e']);
+  map.setPaintProperty('bld-line', 'line-color', ['case', ['==', ['get', 'id'], selB || ''], '#ffffff', al, '#ff4d4d', dr, '#ffd24d', cy, '#19d3ff', '#2dff9a']);
+  map.setPaintProperty('bld-glow', 'line-color', ['case', al, '#ff1d2e', dr, '#ffb300', cy, '#19d3ff', '#2dff9a']);
+  for (const [id, m] of lblMarkers) {
+    const el = m.getElement();
+    el.classList.toggle('alarm', activeBuildings.has(id));
+    el.classList.toggle('drill', drillBuildings.has(id) && !activeBuildings.has(id));
+  }
 }
 setInterval(() => { blinkOn = !blinkOn; paint(); }, 450);
 
@@ -109,7 +113,8 @@ function syncSensors() {
     m.setLngLat(s.pos).setDraggable(adminOn);
     const el = m.getElement();
     el.querySelector('span').textContent = s.name || id;
-    el.classList.toggle('alarm', alarms.has(id));
+    el.classList.toggle('alarm', realSensors.has(id));
+    el.classList.toggle('drill', drillSensors.has(id) && !realSensors.has(id));
     el.classList.toggle('sel', selS === id);
   }
 }
@@ -137,16 +142,17 @@ $('b-base').onclick = (e) => {
 };
 
 /* ---------- Alarmas ---------- */
-function resolve(id, raw) {
+function resolve(key, raw) {
+  const id = raw?.sensorId ?? key;
   const s = campus.sensors[id];
   const b = s && getB(s.buildingId);
   return {
-    sensorId: id, name: s?.name ?? id, buildingId: b?.id ?? null, buildingName: b?.name ?? null,
+    key, sensorId: id, drill: !!raw?.drill, name: s?.name ?? id, buildingId: b?.id ?? null, buildingName: b?.name ?? null,
     floor: s?.floor ?? 'Sin mapear', reference: s?.reference ?? 'Sensor sin mapear: verificar en el panel',
     ts: raw?.ts?.toMillis?.() ?? raw?.ts ?? Date.now(), dispatched: !!raw?.dispatchedAt, pos: s?.pos ?? null,
   };
 }
-const list = () => [...alarms].map(([id, raw]) => resolve(id, raw));
+const list = () => [...alarms].map(([k, raw]) => resolve(k, raw));
 
 const events = [];
 function log(text, kind = '') {
@@ -156,11 +162,11 @@ function log(text, kind = '') {
 }
 
 let actx;
-function beep() {
+function beep(freq = 880) {
   try {
     actx ??= new AudioContext();
     const o = actx.createOscillator(), g = actx.createGain();
-    o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
+    o.frequency.value = freq; o.connect(g); g.connect(actx.destination);
     g.gain.setValueAtTime(0.2, actx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.6);
     o.start(); o.stop(actx.currentTime + 0.6);
@@ -184,6 +190,9 @@ function renderHud() {
   $('h-t').textContent = new Date(a.ts).toLocaleTimeString();
   $('h-dispatch').disabled = a.dispatched;
   $('h-dispatch').textContent = a.dispatched ? 'Brigada despachada' : 'Despachar brigada';
+  $('hud').classList.toggle('drill', a.drill);
+  $('hud-title').textContent = a.drill ? 'Simulacro · no es una emergencia real' : '¡¡ Alerta de incendio activada !!';
+  $('h-st').textContent = a.drill ? 'Simulacro en curso' : 'Crítico · alarma activada';
   $('hud').hidden = false;
   drawLink();
 }
@@ -206,25 +215,30 @@ function openAlarm(id) {
 }
 function refresh() {
   const all = list();
-  activeBuildings = new Set(all.map((a) => a.buildingId).filter(Boolean));
+  const real = all.filter((a) => !a.drill), dr = all.filter((a) => a.drill);
+  activeBuildings = new Set(real.map((a) => a.buildingId).filter(Boolean));
+  drillBuildings = new Set(dr.map((a) => a.buildingId).filter(Boolean));
+  realSensors = new Set(real.map((a) => a.sensorId)); drillSensors = new Set(dr.map((a) => a.sensorId));
+  $('drillbar').hidden = !dr.length;
   const ul = $('alarm-list');
   ul.replaceChildren(...all.map((a) => {
     const li = document.createElement('li');
     li.tabIndex = 0;
-    if (a.dispatched) li.className = 'done';
-    li.textContent = `${a.buildingName ?? 'Sin mapear'} · ${a.floor}`;
+    li.className = [a.dispatched && 'done', a.drill && 'drill'].filter(Boolean).join(' ');
+    li.textContent = `${a.drill ? 'SIMULACRO · ' : ''}${a.buildingName ?? 'Sin mapear'} · ${a.floor}`;
     const s = document.createElement('small');
     s.textContent = `${a.name}${a.dispatched ? ' · despachada' : ''}`;
     li.appendChild(s);
-    li.onclick = () => openAlarm(a.sensorId);
-    li.onkeydown = (e) => { if (e.key === 'Enter') openAlarm(a.sensorId); };
+    li.onclick = () => openAlarm(a.key);
+    li.onkeydown = (e) => { if (e.key === 'Enter') openAlarm(a.key); };
     return li;
   }));
   $('empty').hidden = all.length > 0;
   $('n-sensors').textContent = Object.keys(campus.sensors).length;
-  $('n-active').textContent = all.length;
-  $('n-disp').textContent = all.filter((a) => a.dispatched).length;
+  $('n-active').textContent = real.length;
+  $('n-disp').textContent = real.filter((a) => a.dispatched).length;
   syncSensors(); paint(); renderHud();
+  if (adminOn && tab === 'd') renderAdmin();
 }
 function upsertAlarm(id, raw) {
   const isNew = !alarms.has(id);
@@ -232,20 +246,23 @@ function upsertAlarm(id, raw) {
   refresh();
   if (isNew) {
     const a = resolve(id, raw);
-    log(`ALARMA · ${a.buildingName ?? 'sin mapear'} · ${a.name}`, 'al');
-    beep(); openAlarm(id);
+    log(`${a.drill ? 'SIMULACRO' : 'ALARMA'} · ${a.buildingName ?? 'sin mapear'} · ${a.name}`, a.drill ? '' : 'al');
+    beep(a.drill ? 520 : 880);
+    if (!a.drill || !list().some((x) => !x.drill)) openAlarm(id); // un simulacro nunca desplaza una alarma real
   }
 }
 function removeAlarm(id) {
+  const a = alarms.has(id) && resolve(id, alarms.get(id));
   if (!alarms.delete(id)) return;
-  log(`RESTABLECIDA · ${campus.sensors[id]?.name ?? id}`, 'ok');
+  log(`${a.drill ? 'SIMULACRO TERMINADO' : 'RESTABLECIDA'} · ${a.name}`, 'ok');
   if (hudSensor === id) hudSensor = null;
   refresh();
 }
 $('h-close').onclick = () => { hudSensor = null; renderHud(); };
 $('h-dispatch').onclick = () => {
   if (!hudSensor) return;
-  log(`DESPACHO · ${campus.sensors[hudSensor]?.name ?? hudSensor}`);
+  const a = resolve(hudSensor, alarms.get(hudSensor));
+  log(`${a.drill ? 'DESPACHO (SIMULACRO)' : 'DESPACHO'} · ${a.name}`);
   dispatchFn?.(hudSensor);
 };
 
@@ -262,6 +279,12 @@ function setStatus(text, ok = true) {
   $('banner').classList.toggle('off', !ok);
   $('bar-fill').parentElement.classList.toggle('off', !ok);
 }
+
+function setOffline(off) {
+  $('offbar').hidden = !off;
+  document.title = `${off ? '⚠ SIN ENLACE · ' : ''}Sistema de seguridad`;
+}
+addEventListener('offline', () => setOffline(true));
 
 /* ---------- Administración ---------- */
 const flash = (msg) => { $('adm-msg').textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { $('adm-msg').textContent = ''; }, 5000); };
@@ -425,14 +448,17 @@ function renderAdmin() {
         <div class="row">${DEMO ? '<button id="a-sim">Simular alarma</button>' : ''}<button id="a-dels" class="danger">Quitar del plano</button></div>
         <p class="note">Arrastra el punto naranja en el mapa para moverla.</p>`;
     } else h += '<p class="note">Haz clic en una alarma del mapa o de la lista para editarla.</p>';
-  } else {
+  } else if (tab === 'c') {
     h = `<p class="note">Mueve, gira o escala todo el campamento a la vez (edificios y alarmas).</p>
       <button id="c-move" class="primary">Mover: clic en el nuevo centro</button>
       <div class="row"><button id="c-rm">Girar −1°</button><button id="c-rp">Girar +1°</button></div>
       <div class="row"><button id="c-sm">Escala −2%</button><button id="c-sp">Escala +2%</button></div>
       <h2>Valores de fábrica</h2><button id="c-reset" class="danger">Restablecer edificios y alarmas</button>`;
-  }
+  } else if (tab === 'd') h = drillHtml();
+  else if (tab === 'a') h = '<button id="au-refresh">Actualizar</button><ul id="au-list" class="audit"><li>Cargando…</li></ul>';
+  else h = backupHtml();
   $('adm-body').innerHTML = h;
+  if (tab === 'a') loadAudit();
 }
 document.querySelector('.tabs').addEventListener('click', (e) => {
   const t = e.target.closest('button')?.dataset.tab;
@@ -456,13 +482,18 @@ $('adm-body').addEventListener('input', (e) => {
   markDirty();
   if (s) refresh();
 });
-$('adm-body').addEventListener('change', (e) => { if (!pending && e.target.id !== 'f-sid') renderAdmin(); });
+$('adm-body').addEventListener('change', (e) => {
+  if (e.target.id === 'bk-file') return restoreBackup(e.target.files[0]);
+  if (e.target.id === 'd-sel') return;
+  if (!pending && e.target.id !== 'f-sid') renderAdmin();
+});
 
 $('adm-body').addEventListener('click', (e) => {
   const el = e.target.closest('button,li');
   if (!el) return;
   if (el.dataset.b) return selectBuilding(el.dataset.b);
   if (el.dataset.s) return selectSensor(el.dataset.s);
+  if (el.dataset.endd) return endDrill(el.dataset.endd);
   switch (el.id) {
     case 'a-newb': return startTool('draw');
     case 'a-addv': return startTool('addVertex');
@@ -484,6 +515,10 @@ $('adm-body').addEventListener('click', (e) => {
       campus.sensors[id] = { name: $('f-sname').value.trim() || id, buildingId: $('f-sbld').value, floor: $('f-sfloor').value, reference: $('f-sref').value, pos: pending.pos };
       pending = null; markDirty(); renderAll(); return selectSensor(id);
     }
+    case 'd-start': return startDrill($('d-sel').value);
+    case 'd-endall': return [...alarms].filter(([, r]) => r.drill).forEach(([, r]) => endDrill(r.sensorId));
+    case 'au-refresh': return loadAudit();
+    case 'bk-dl': return downloadBackup();
     case 'c-move': return startTool('moveCamp');
     case 'c-rm': rotateAll(campus, -1); break;
     case 'c-rp': rotateAll(campus, 1); break;
@@ -498,7 +533,7 @@ $('adm-body').addEventListener('click', (e) => {
 });
 
 $('adm-save').onclick = async () => {
-  try { await saveCampus(campus, fb); setClean(); flash('Cambios guardados.'); }
+  try { await saveCampus(campus, fb); setClean(); flash('Cambios guardados.'); audit('config_save', '', `${campus.buildings.length} edificios, ${Object.keys(campus.sensors).length} alarmas`); }
   catch (err) { console.error(err); flash(`No se pudo guardar: ${err.code || err.message}`); }
 };
 $('adm-discard').onclick = async () => {
@@ -506,6 +541,78 @@ $('adm-discard').onclick = async () => {
   campus = await loadCampus(fb); selB = null; selS = null; pending = null; endTool(); setClean(); renderAll();
 };
 addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); });
+
+/* ---------- Auditoría, simulacros y respaldo ---------- */
+const AUDIT_LABELS = { login: 'Ingreso', dispatch: 'Despacho', config_save: 'Guardó el plano', drill_start: 'Inició simulacro', drill_end: 'Terminó simulacro', drill_dispatch: 'Despacho (simulacro)', backup_restore: 'Restauró respaldo' };
+async function audit(type, sensorId = '', detail = '') {
+  if (!fb) return;
+  try {
+    await fb.addDoc(fb.collection(fb.db, 'audit'), { ts: fb.serverTimestamp(), uid: fb.uid, email: fb.email, type, sensorId, detail: String(detail).slice(0, 300) });
+  } catch (err) { console.error('No se pudo registrar en la auditoría', err); flash('Aviso: no se pudo registrar en la auditoría.'); }
+}
+async function loadAudit() {
+  const ul = $('au-list');
+  if (!ul) return;
+  if (!fb) { ul.innerHTML = '<li>La auditoría requiere conexión a Firebase.</li>'; return; }
+  try {
+    const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'audit'), fb.orderBy('ts', 'desc'), fb.limit(60)));
+    ul.replaceChildren(...snap.docs.map((d) => {
+      const x = d.data(), li = document.createElement('li');
+      li.textContent = `${x.ts?.toDate?.().toLocaleString() ?? '…'} · ${x.email} · ${AUDIT_LABELS[x.type] ?? x.type}${x.sensorId ? ` · ${x.sensorId}` : ''}${x.detail ? ` · ${x.detail}` : ''}`;
+      return li;
+    }));
+    if (!snap.size) ul.innerHTML = '<li>Sin registros todavía.</li>';
+  } catch (err) { console.error(err); ul.innerHTML = '<li>No se pudo leer la auditoría.</li>'; }
+}
+
+function drillHtml() {
+  const active = [...alarms].filter(([, r]) => r.drill).map(([, r]) => r.sensorId);
+  return `<p class="note">Un simulacro se ve en ámbar para todos los operadores. No es una alarma real ni activa avisos externos.</p>
+    <label>Alarma a simular<select id="d-sel">${Object.entries(campus.sensors).map(([id, s]) => `<option value="${esc(id)}">${esc(s.name)} (${esc(id)})</option>`).join('')}</select></label>
+    <button id="d-start" class="primary">Iniciar simulacro</button>
+    <h2>En curso</h2><ul class="items">${active.map((id) => `<li>${esc(campus.sensors[id]?.name ?? id)}<button data-endd="${esc(id)}">Terminar</button></li>`).join('') || '<li>Ninguno</li>'}</ul>
+    ${active.length ? '<button id="d-endall" class="danger">Terminar todos</button>' : ''}`;
+}
+async function startDrill(id) {
+  if (!id) return;
+  try {
+    if (fb) { await fb.setDoc(fb.doc(fb.db, 'drills', id), { sensorId: id, status: 'active', ts: fb.serverTimestamp(), startedBy: fb.email }); audit('drill_start', id); }
+    else upsertAlarm(`d:${id}`, { sensorId: id, drill: true, ts: Date.now() });
+    flash('Simulacro iniciado.');
+  } catch (err) { console.error(err); flash(`No se pudo iniciar: ${err.code || err.message}`); }
+}
+async function endDrill(id) {
+  try {
+    if (fb) { await fb.updateDoc(fb.doc(fb.db, 'drills', id), { status: 'cleared' }); audit('drill_end', id); }
+    else removeAlarm(`d:${id}`);
+  } catch (err) { console.error(err); flash(`No se pudo terminar: ${err.code || err.message}`); }
+}
+
+function backupHtml() {
+  return `<p class="note">Descarga una copia de los edificios y alarmas del plano y guárdala fuera de Firebase (disco, correo). Si algo se daña, puedes restaurarla aquí.</p>
+    <button id="bk-dl" class="primary">Descargar respaldo</button>
+    <label>Restaurar desde archivo<input id="bk-file" type="file" accept="application/json,.json"></label>
+    <p class="note">Al restaurar, revisa el plano y pulsa Guardar cambios para aplicarlo a todos.</p>`;
+}
+function downloadBackup() {
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), campus }, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `respaldo-plano-${new Date().toISOString().slice(0, 10)}.json` });
+  a.click(); URL.revokeObjectURL(a.href);
+}
+async function restoreBackup(file) {
+  if (!file) return;
+  try {
+    const c = JSON.parse(await file.text()).campus;
+    const okPt = (p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite);
+    const ok = c && Array.isArray(c.buildings) && c.sensors && typeof c.sensors === 'object' &&
+      c.buildings.every((b) => b.id && Array.isArray(b.ring) && b.ring.length >= 3 && b.ring.every(okPt)) &&
+      Object.values(c.sensors).every((x) => okPt(x.pos));
+    if (!ok) throw new Error('formato');
+    if (!confirm(`Se reemplazará el plano actual por el respaldo (${c.buildings.length} edificios, ${Object.keys(c.sensors).length} alarmas).`)) return;
+    campus = c; selB = null; selS = null; clearHandles(); markDirty(); audit('backup_restore', '', file.name); renderAll();
+    flash('Respaldo cargado. Pulsa Guardar cambios para aplicarlo.');
+  } catch { flash('El archivo no es un respaldo válido.'); }
+}
 
 /* ---------- Modo demo (sin Firebase) ---------- */
 function startDemo() {
@@ -533,12 +640,12 @@ async function startFirebase() {
   const V = '10.12.2';
   const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
   const { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
-  const { getFirestore, collection, query, where, onSnapshot, getDoc, setDoc, doc, updateDoc, serverTimestamp } =
+  const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, query, where, orderBy, limit, onSnapshot, getDoc, getDocs, setDoc, addDoc, doc, updateDoc, serverTimestamp } =
     await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getFirestore(app);
+  const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 
   $('login').onsubmit = async (e) => {
     e.preventDefault();
@@ -560,7 +667,7 @@ async function startFirebase() {
     catch (err) { console.error('No se pudo leer el rol; se asigna Usuario', err); }
     setRole(r, user.email);
 
-    fb = { db, getDoc, setDoc, doc, serverTimestamp, email: user.email };
+    fb = { db, getDoc, getDocs, setDoc, addDoc, updateDoc, doc, collection, query, orderBy, limit, serverTimestamp, email: user.email, uid: user.uid };
     campus = await loadCampus(fb);
     map.jumpTo({ center: campusCenter(campus) });
     renderAll();
@@ -571,14 +678,19 @@ async function startFirebase() {
       renderAll();
     });
 
-    dispatchFn = (id) => updateDoc(doc(db, 'alarms', id), { dispatchedAt: serverTimestamp(), dispatchedBy: user.email })
-      .catch((err) => { console.error(err); setStatus('Error al registrar el despacho', false); });
+    dispatchFn = (key) => {
+      const drill = key.startsWith('d:'), id = drill ? key.slice(2) : key;
+      return updateDoc(doc(db, drill ? 'drills' : 'alarms', id), { dispatchedAt: serverTimestamp(), dispatchedBy: user.email })
+        .then(() => audit(drill ? 'drill_dispatch' : 'dispatch', id, campus.sensors[id]?.name ?? ''))
+        .catch((err) => { console.error(err); setStatus('Error al registrar el despacho', false); });
+    };
 
     onSnapshot(
       query(collection(db, 'alarms'), where('status', '==', 'active')),
       { includeMetadataChanges: true },
       (snapshot) => {
         setStatus(snapshot.metadata.fromCache ? 'Sin conexión a Firestore' : 'Enlace activo', !snapshot.metadata.fromCache);
+        setOffline(snapshot.metadata.fromCache);
         snapshot.docChanges().forEach((ch) => {
           if (ch.type === 'removed') removeAlarm(ch.doc.id);
           else upsertAlarm(ch.doc.id, ch.doc.data());
@@ -586,6 +698,14 @@ async function startFirebase() {
       },
       (err) => { console.error(err); setStatus('Error de lectura en Firestore', false); }
     );
+
+    onSnapshot(query(collection(db, 'drills'), where('status', '==', 'active')), (snapshot) => {
+      snapshot.docChanges().forEach((ch) => {
+        if (ch.type === 'removed') removeAlarm(`d:${ch.doc.id}`);
+        else upsertAlarm(`d:${ch.doc.id}`, { ...ch.doc.data(), drill: true });
+      });
+    }, (err) => console.error('Simulacros:', err));
+    audit('login');
 
     // Heartbeat: un panel en silencio no significa que no haya fuego
     const panels = new Map();
