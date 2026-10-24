@@ -39,3 +39,9 @@ Repositorio → Settings → Pages → Deploy from branch → `main` / root.
 - Este sistema complementa, no reemplaza, la monitorización certificada del panel (NFPA 72 o norma local).
 - La `apiKey` web es pública; la protección son las reglas de Firestore.
 - Un sensor sin mapear aparece como "Sin mapear" en vez de descartarse.
+
+## Auditoría, simulacro y respaldo (Administrar)
+- **Auditoría:** registra ingresos, despachos, guardados del plano y simulacros (quién y cuándo). Los registros no se pueden editar ni borrar. Solo el administrador los lee.
+- **Simulacro:** muestra una alarma en ámbar, marcada como simulacro, para todos los operadores. Nunca desplaza a una alarma real.
+- **Respaldo:** descarga y restaura el plano en un archivo JSON. Guarda una copia fuera de Firebase.
+- **Sin enlace:** si Firestore deja de responder, aparece una franja roja arriba. Con el enlace caído NO llegan alarmas.

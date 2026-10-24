@@ -29,6 +29,8 @@
   </nav>
   <div class="chip right">Monitoreo de complejo</div>
 </header>
+<div id="offbar" hidden role="alert">SIN ENLACE · las alarmas NO se están recibiendo. Verifique el panel físico y use el plan de contingencia.</div>
+<div id="drillbar" hidden>MODO SIMULACRO ACTIVO · no es una emergencia real</div>
 <span id="warn" hidden></span>
 
 <aside id="secpanel" class="panel">
@@ -55,6 +57,9 @@
     <button data-tab="b" aria-pressed="true">Edificios</button>
     <button data-tab="s" aria-pressed="false">Alarmas</button>
     <button data-tab="c" aria-pressed="false">Calibración</button>
+    <button data-tab="d" aria-pressed="false">Simulacro</button>
+    <button data-tab="a" aria-pressed="false">Auditoría</button>
+    <button data-tab="r" aria-pressed="false">Respaldo</button>
   </div>
   <div id="adm-body"></div>
   <footer>
@@ -73,7 +78,7 @@
     <dt>Nivel:</dt><dd id="h-f"></dd>
     <dt>Detalle:</dt><dd id="h-r"></dd>
     <dt>Hora:</dt><dd id="h-t"></dd>
-    <dt>Estado:</dt><dd class="crit">Crítico · alarma activada</dd>
+    <dt>Estado:</dt><dd id="h-st" class="crit">Crítico · alarma activada</dd>
   </dl>
   <div class="row">
     <button id="h-dispatch" class="danger">Despachar brigada</button>
