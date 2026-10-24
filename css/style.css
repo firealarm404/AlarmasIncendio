@@ -109,3 +109,20 @@ button:disabled{opacity:.5;cursor:default}
   .chip{font-size:15px;padding:4px 10px} #view button{padding:4px 8px}
   #secpanel{width:200px} #log,#timer{display:none} #banner{font-size:16px}
 }
+
+#offbar,#drillbar{position:fixed;z-index:5;left:50%;transform:translateX(-50%);padding:4px 18px;font:700 18px var(--font);text-align:center;max-width:calc(100vw - 24px)}
+#offbar{top:56px;background:var(--red);color:#fff}
+#drillbar{top:96px;background:var(--amber);color:var(--bg)}
+#warn{top:136px}
+#hud.drill{border-color:var(--amber);box-shadow:0 0 26px rgba(255,179,0,.4)}
+#hud.drill h2{color:var(--amber);border-color:var(--amber)}
+#hud.drill::before{background:repeating-linear-gradient(115deg,var(--amber) 0 9px,transparent 9px 15px)}
+#hud.drill dd.crit{color:var(--amber)}
+#alarm-list li.drill{border-color:var(--amber);color:#ffd24d}
+.lbl.drill{color:var(--amber)}
+.sensor.drill i{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.tabs{flex-wrap:wrap}
+.tabs button{flex:1 1 30%}
+.items li button{padding:1px 8px;margin-left:8px;font-size:13px}
+.audit{list-style:none;margin:8px 0 0;padding:0}
+.audit li{font-size:13px;padding:4px 0;border-bottom:1px solid var(--line-dim);color:var(--muted)}
